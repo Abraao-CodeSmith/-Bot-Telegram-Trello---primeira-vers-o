@@ -53,9 +53,27 @@ from telegram.ext import (
 )
 
 # -------------------- CONFIG --------------------
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")  # <-- substitua aqui pelo seu token (apenas esta linha)
+
+# Debug: Ver todas as variáveis de ambiente
+print("=== DEBUG VARIÁVEIS DE AMBIENTE ===")
+for key, value in os.environ.items():
+    if 'TELEGRAM' in key.upper() or 'TOKEN' in key.upper():
+        print(f"{key}: {value}")
+
+print("=== TODAS AS VARIÁVEIS ===")
+print(dict(os.environ))
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+print(f"TELEGRAM_TOKEN value: {TELEGRAM_TOKEN}")
+
+if not TELEGRAM_TOKEN:
+    # Tentar outros nomes comuns
+    TELEGRAM_TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TOKEN") or os.environ.get("TG_TOKEN")
+    print(f"Tentando nomes alternativos: {TELEGRAM_TOKEN}")
+
 if not TELEGRAM_TOKEN:
     raise ValueError("❌ TELEGRAM_TOKEN não encontrado!")
+
 
 USERS_FILE = "usuarios.json"
 API_BASE = "https://api.trello.com/1"
@@ -1926,4 +1944,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
