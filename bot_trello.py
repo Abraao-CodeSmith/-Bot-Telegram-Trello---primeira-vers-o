@@ -63,7 +63,7 @@ for key, value in os.environ.items():
 print("=== TODAS AS VARIÁVEIS ===")
 print(dict(os.environ))
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN") or os.environ.get("BOT_TOKEN")
 print(f"TELEGRAM_TOKEN value: {TELEGRAM_TOKEN}")
 
 if not TELEGRAM_TOKEN:
@@ -1944,5 +1944,6 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
