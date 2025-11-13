@@ -53,7 +53,7 @@ from telegram.ext import (
 )
 
 # -------------------- CONFIG --------------------
-TELEGRAM_TOKEN = os.environ.get("8427499338:AAEz8TIbDi9ZzqVBxRE5xTrV7yOKa4Gb13I")  # <-- substitua aqui pelo seu token (apenas esta linha)
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")  # <-- substitua aqui pelo seu token (apenas esta linha)
 if not TELEGRAM_TOKEN:
     raise ValueError("❌ TELEGRAM_TOKEN não encontrado!")
 
@@ -1926,3 +1926,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
