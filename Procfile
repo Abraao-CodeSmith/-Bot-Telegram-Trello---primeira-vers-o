@@ -1,1 +1,1 @@
-worker: python bot_trello.py
+web: python bot_trello.py
