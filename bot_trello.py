@@ -1909,7 +1909,7 @@ async def handle_anexo_document(update: Update, context: ContextTypes.DEFAULT_TY
 # -------------------- Main --------------------
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
     # Comandos básicos
     app.add_handler(CommandHandler("start", start_cmd))
@@ -1944,6 +1944,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
