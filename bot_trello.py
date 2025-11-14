@@ -55,6 +55,11 @@ from telegram.ext import (
 # -------------------- CONFIG --------------------
 
 # Debug: Ver todas as variáveis de ambiente
+
+import sys
+print(f"Python version: {sys.version}")
+print(f"Python executable: {sys.executable}")
+
 print("=== DEBUG VARIÁVEIS DE AMBIENTE ===")
 for key, value in os.environ.items():
     if 'TELEGRAM' in key.upper() or 'TOKEN' in key.upper():
@@ -1944,6 +1949,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
