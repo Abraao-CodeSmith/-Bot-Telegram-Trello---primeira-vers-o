@@ -791,6 +791,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+    # Verifica se está no modo de adição de anexos
+    if state.get("mode") == "adicionando_anexo_cartao" and text.lower() == "/ok":
+        index_cartao = state.get("index_cartao")
+        anexos_temp = state.get("anexos", [])
+        
+        if anexos_temp:
+            # Salva os anexos no rascunho
+            rascunhos = carregar_rascunhos(user_id)
+            if rascunhos and 0 <= index_cartao < len(rascunhos):
+                rascunho = rascunhos[index_cartao]
+                if "anexos" not in rascunho:
+                    rascunho["anexos"] = []
+                
+                rascunho["anexos"].extend(anexos_temp)
+                rascunho["editado"] = True
+                atualizar_rascunho(user_id, index_cartao, rascunho)
+                
+                await update.message.reply_text(f"✅ {len(anexos_temp)} anexo(s) adicionado(s) ao cartão!")
+                
+                # Limpa o estado
+                state["mode"] = None
+                state["anexos"] = []
+                user_states[user_id] = state
+                
+                # Volta para as opções de edição
+                fake_query = type('Obj', (object,), {
+                    'from_user': update.effective_user,
+                    'edit_message_text': update.message.reply_text,
+                    'message': update.message
+                })
+                await mostrar_opcoes_edicao(fake_query, context, index_cartao)
+            else:
+                await update.message.reply_text("❌ Cartão não encontrado.")
+        else:
+            await update.message.reply_text("❌ Nenhum anexo foi enviado.")
+        
+        return
+
     # Verifica se está no modo direto de checklist
     if state.get("mode") == "add_checklist_direto":
         if text.startswith("/cancelar_checklist"):
@@ -1348,13 +1386,18 @@ async def add_anexo_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, i
         "Agora envie os arquivos que deseja anexar.\n"
         "Após enviar todos os arquivos, use:\n"
         "• `/ok` para finalizar e voltar à edição\n"
-        "• `/cancelar` para cancelar a operação"
+        "• `/cancelar` para cancelar a operação\n\n"
+        "Ou clique no botão abaixo para finalizar:"
     )
 
+    # Cria teclado com botão de finalizar
+    keyboard = [[InlineKeyboardButton("✅ Finalizar Anexos", callback_data="finalizar_anexos")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     if update.callback_query:
-        await update.callback_query.message.reply_text(mensagem, parse_mode="Markdown")
+        await update.callback_query.message.reply_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
     else:
-        await update.message.reply_text(mensagem, parse_mode="Markdown")
+        await update.message.reply_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
 
 
 async def add_membro_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
@@ -1699,11 +1742,15 @@ async def criar_cartoes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar etiqueta {etiqueta_id}: {e}")
 
-                # Adiciona anexos
+                # CORREÇÃO: Adiciona anexos
                 for anexo_path in rascunho.get("anexos", []):
                     try:
                         if os.path.exists(anexo_path):
+                            logger.info(f"Tentando adicionar anexo: {anexo_path}")
                             upload_file_to_card(user_id, card["id"], anexo_path)
+                            logger.info(f"Anexo adicionado com sucesso: {anexo_path}")
+                        else:
+                            logger.warning(f"Arquivo de anexo não encontrado: {anexo_path}")
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar anexo {anexo_path}: {e}")
 
@@ -1834,11 +1881,15 @@ async def criar_cartoes_cmd_from_callback(query, context):
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar etiqueta {etiqueta_id}: {e}")
 
-                # Adiciona anexos
+                # CORREÇÃO: Adiciona anexos
                 for anexo_path in rascunho.get("anexos", []):
                     try:
                         if os.path.exists(anexo_path):
+                            logger.info(f"Tentando adicionar anexo: {anexo_path}")
                             upload_file_to_card(user_id, card["id"], anexo_path)
+                            logger.info(f"Anexo adicionado com sucesso: {anexo_path}")
+                        else:
+                            logger.warning(f"Arquivo de anexo não encontrado: {anexo_path}")
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar anexo {anexo_path}: {e}")
 
@@ -1925,7 +1976,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = os.path.join(DOWNLOAD_DIR, f"{user_id}_{document.file_name}")
             await file.download_to_drive(file_path)
 
-            # Adiciona ao estado
+            # Adiciona ao estado temporário
             anexos = state.get("anexos", [])
             anexos.append(file_path)
             state["anexos"] = anexos
@@ -2008,6 +2059,41 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif data == "finalizar_selecao_etiquetas":
         await finalizar_selecao_etiquetas(update, context)
+
+    # Handler para finalizar anexos
+    elif data == "finalizar_anexos":
+        state = user_states.get(user_id, {})
+        if state.get("mode") == "adicionando_anexo_cartao":
+            index_cartao = state.get("index_cartao")
+            anexos_temp = state.get("anexos", [])
+            
+            if anexos_temp:
+                # Salva os anexos no rascunho
+                rascunhos = carregar_rascunhos(user_id)
+                if rascunhos and 0 <= index_cartao < len(rascunhos):
+                    rascunho = rascunhos[index_cartao]
+                    if "anexos" not in rascunho:
+                        rascunho["anexos"] = []
+                    
+                    rascunho["anexos"].extend(anexos_temp)
+                    rascunho["editado"] = True
+                    atualizar_rascunho(user_id, index_cartao, rascunho)
+                    
+                    await query.edit_message_text(f"✅ {len(anexos_temp)} anexo(s) adicionado(s) ao cartão!")
+                    
+                    # Limpa o estado
+                    state["mode"] = None
+                    state["anexos"] = []
+                    user_states[user_id] = state
+                    
+                    # Volta para as opções de edição
+                    await mostrar_opcoes_edicao(query, context, index_cartao)
+                else:
+                    await query.edit_message_text("❌ Cartão não encontrado.")
+            else:
+                await query.edit_message_text("❌ Nenhum anexo foi enviado.")
+        
+        return
 
     # Handlers para busca de cartões
     elif data.startswith("editar_cartao_busca|"):
@@ -2118,6 +2204,3 @@ def main():
 if __name__ == "__main__":
 
     main()
-
-
-
