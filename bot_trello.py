@@ -10,6 +10,7 @@ Versão completa final (multiusuário) — integra Trello <-> Telegram:
 - marcar/desmarcar: /marcar, /desmarcar (modo guiado)
 - edição de cartão (modo guiado): /nvnome, /nvdesc, /nvdata (dd/mm/aaaa)
 - membros: /addmembro, /rmmembro
+- etiquetas: /addetiqueta, /rmetiqueta
 - comentários: /coment (modo guiado)
 - anexos: /anexo (entra em modo aguardando arquivos), enviar arquivos e depois /fim para subir
 - /veranexos para listar anexos com links
@@ -20,6 +21,7 @@ Versão completa final (multiusuário) — integra Trello <-> Telegram:
 - NOVO: Sistema de busca com interface de edição
 - NOVO: Cancelamento global com /cancelar
 - NOVO: Adição de anexos durante criação/edição de pedidos
+- NOVO: Sistema de etiquetas (labels) com múltipla seleção
 Notes:
 - Substitua TELEGRAM_TOKEN por seu token real (apenas nessa linha).
 - Instalar dependências:
@@ -185,6 +187,10 @@ def get_card_comments(user_id: int, card_id: str):
 
 def get_card_attachments(user_id: int, card_id: str):
     return trello_request_for_user(user_id, "GET", f"/cards/{card_id}/attachments")
+
+
+def get_board_labels(user_id: int, board_id: str):
+    return trello_request_for_user(user_id, "GET", f"/boards/{board_id}/labels")
 
 
 def create_checklist(user_id: int, card_id: str, name: str):
@@ -385,6 +391,8 @@ def extract_info_from_pdf(pdf_path):
                 "comentarios": "",
                 "membros": [],
                 "membros_ids": [],
+                "etiquetas": [],
+                "etiquetas_ids": [],
                 "arquivo_pdf_original": pdf_path,
                 "editado": False,
                 "anexos": []  # Nova lista para armazenar anexos
@@ -1020,6 +1028,7 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
             [InlineKeyboardButton("📋 Gerenciar Checklists", callback_data=f"gerenciar_checklists|{index_cartao}")],
             [InlineKeyboardButton("💬 Adicionar Comentário", callback_data=f"add_comentario_existente|{index_cartao}")],
             [InlineKeyboardButton("📎 Adicionar Anexo", callback_data=f"add_anexo_existente|{index_cartao}")],
+            [InlineKeyboardButton("🏷️ Gerenciar Etiquetas", callback_data=f"gerenciar_etiquetas_existente|{index_cartao}")],
             [InlineKeyboardButton("👥 Gerenciar Membros", callback_data=f"gerenciar_membros_existente|{index_cartao}")],
             [
                 InlineKeyboardButton("⬅️ Voltar", callback_data="voltar_busca"),
@@ -1104,6 +1113,8 @@ async def ok_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             preview_text += f"\n💬 Comentário adicionado"
         if rascunho.get('membros'):
             preview_text += f"\n👥 {len(rascunho['membros'])} membro(s)"
+        if rascunho.get('etiquetas'):
+            preview_text += f"\n🏷️ {len(rascunho['etiquetas'])} etiqueta(s)"
         if rascunho.get('anexos'):
             preview_text += f"\n📎 {len(rascunho['anexos'])} anexo(s)"
 
@@ -1171,6 +1182,8 @@ async def ok_cmd_from_callback(query, context):
             preview_text += f"\n💬 Comentário adicionado"
         if rascunho.get('membros'):
             preview_text += f"\n👥 {len(rascunho['membros'])} membro(s)"
+        if rascunho.get('etiquetas'):
+            preview_text += f"\n🏷️ {len(rascunho['etiquetas'])} etiqueta(s)"
         if rascunho.get('anexos'):
             preview_text += f"\n📎 {len(rascunho['anexos'])} anexo(s)"
 
@@ -1247,6 +1260,8 @@ async def mostrar_opcoes_edicao(query, context, index_cartao: int):
         detalhes_text += f"💬 *Comentários:*\n{rascunho['comentarios']}\n\n"
     if rascunho.get('membros'):
         detalhes_text += f"👥 *Membros:* {', '.join(rascunho['membros'])}\n\n"
+    if rascunho.get('etiquetas'):
+        detalhes_text += f"🏷️ *Etiquetas:* {', '.join(rascunho['etiquetas'])}\n\n"
     if rascunho.get('anexos'):
         detalhes_text += f"📎 *Anexos ({len(rascunho['anexos'])}):*\n"
         for anexo in rascunho['anexos']:
@@ -1260,6 +1275,7 @@ async def mostrar_opcoes_edicao(query, context, index_cartao: int):
         [InlineKeyboardButton("💬 Adicionar Comentário", callback_data=f"add_comentario|{index_cartao}")],
         [InlineKeyboardButton("📋 Adicionar Checklist", callback_data=f"add_checklist|{index_cartao}")],
         [InlineKeyboardButton("👥 Adicionar Membro", callback_data=f"add_membro|{index_cartao}")],
+        [InlineKeyboardButton("🏷️ Adicionar Etiqueta", callback_data=f"add_etiqueta|{index_cartao}")],
         [InlineKeyboardButton("📎 Adicionar Anexo", callback_data=f"add_anexo|{index_cartao}")],
         [
             InlineKeyboardButton("⬅️ Voltar", callback_data="voltar_previa"),
@@ -1402,6 +1418,74 @@ async def add_membro_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await update.message.reply_text(mensagem)
 
 
+async def add_etiqueta_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
+    """Inicia modo de adição de etiqueta para um cartão específico com lista de múltipla escolha"""
+    user_id = update.effective_user.id if update.message else update.callback_query.from_user.id
+
+    try:
+        users = load_users()
+        ud = users.get(str(user_id))
+        if not ud:
+            await update.message.reply_text("Configuração não encontrada.")
+            return
+
+        board_id = ud["board_id"]
+        # Busca etiquetas do quadro
+        etiquetas = get_board_labels(user_id, board_id)
+
+        if not etiquetas:
+            mensagem = "Nenhuma etiqueta encontrada no quadro."
+            if update.callback_query:
+                await update.callback_query.message.reply_text(mensagem)
+            else:
+                await update.message.reply_text(mensagem)
+            return
+
+        # Salva etiquetas no contexto para seleção
+        context.user_data["etiquetas_disponiveis"] = etiquetas
+        context.user_data["index_cartao_editando"] = index_cartao
+
+        # Carrega etiquetas já selecionadas
+        rascunhos = carregar_rascunhos(user_id)
+        etiquetas_selecionadas = []
+        if rascunhos and index_cartao < len(rascunhos):
+            etiquetas_selecionadas = rascunhos[index_cartao].get('etiquetas_ids', [])
+
+        # Cria teclado com etiquetas (múltipla seleção)
+        keyboard = []
+        for i, etiqueta in enumerate(etiquetas):
+            nome = etiqueta.get('name', 'Sem nome')
+            cor = etiqueta.get('color', '')
+            emoji_cor = {
+                'green': '🟢', 'yellow': '🟡', 'orange': '🟠', 'red': '🔴', 
+                'purple': '🟣', 'blue': '🔵', 'sky': '💠', 'lime': '🍏',
+                'pink': '🌸', 'black': '⚫'
+            }.get(cor, '⚪')
+            
+            selecionado = "✅ " if etiqueta['id'] in etiquetas_selecionadas else "☐ "
+            keyboard.append([InlineKeyboardButton(f"{selecionado}{emoji_cor} {nome}", callback_data=f"selecionar_etiqueta|{i}")])
+
+        keyboard.append([InlineKeyboardButton("✅ Finalizar Seleção", callback_data="finalizar_selecao_etiquetas")])
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data=f"editar_cartao|{index_cartao}")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        mensagem = "🏷️ *Selecionar Etiquetas*\n\nClique nas etiquetas para adicionar/remover (seleção múltipla):"
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+
+    except Exception as e:
+        logger.exception(f"Erro ao carregar etiquetas: {e}")
+        mensagem = "Erro ao carregar etiquetas do quadro."
+        if update.callback_query:
+            await update.callback_query.message.reply_text(mensagem)
+        else:
+            await update.message.reply_text(mensagem)
+
+
 async def selecionar_membro_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manipula seleção/deseleção de membros"""
     query = update.callback_query
@@ -1451,12 +1535,70 @@ async def selecionar_membro_handler(update: Update, context: ContextTypes.DEFAUL
     await query.answer(f"{status}: {membro['fullName'] or membro['username']}")
 
 
+async def selecionar_etiqueta_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manipula seleção/deseleção de etiquetas"""
+    query = update.callback_query
+    data = query.data
+
+    index_etiqueta = int(data.split("|")[1])
+    etiquetas_disponiveis = context.user_data.get("etiquetas_disponiveis", [])
+    index_cartao = context.user_data.get("index_cartao_editando")
+
+    if not etiquetas_disponiveis or index_etiqueta >= len(etiquetas_disponiveis):
+        await query.answer("Etiqueta não encontrada")
+        return
+
+    # Carrega rascunho atual
+    user_id = query.from_user.id
+    rascunhos = carregar_rascunhos(user_id)
+    if not rascunhos or index_cartao >= len(rascunhos):
+        await query.answer("Cartão não encontrado")
+        return
+
+    rascunho = rascunhos[index_cartao]
+    etiquetas_selecionadas = rascunho.get('etiquetas_ids', [])
+
+    etiqueta = etiquetas_disponiveis[index_etiqueta]
+    etiqueta_id = etiqueta['id']
+
+    # Alterna seleção
+    if etiqueta_id in etiquetas_selecionadas:
+        etiquetas_selecionadas.remove(etiqueta_id)
+        status = "❌ Removida"
+    else:
+        etiquetas_selecionadas.append(etiqueta_id)
+        status = "✅ Adicionada"
+
+    # Atualiza rascunho
+    rascunho['etiquetas_ids'] = etiquetas_selecionadas
+    rascunho['etiquetas'] = [
+        etiqueta['name']
+        for etiqueta in etiquetas_disponiveis
+        if etiqueta['id'] in etiquetas_selecionadas
+    ]
+    rascunho['editado'] = True
+    atualizar_rascunho(user_id, index_cartao, rascunho)
+
+    # Atualiza a mensagem com os novos estados
+    await add_etiqueta_cartao(update, context, index_cartao)
+    await query.answer(f"{status}: {etiqueta['name']}")
+
+
 async def finalizar_selecao_membros(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Finaliza seleção de membros e volta para edição do cartão"""
     query = update.callback_query
     index_cartao = context.user_data.get("index_cartao_editando")
 
     await query.answer("Seleção de membros finalizada")
+    await mostrar_opcoes_edicao(query, context, index_cartao)
+
+
+async def finalizar_selecao_etiquetas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Finaliza seleção de etiquetas e volta para edição do cartão"""
+    query = update.callback_query
+    index_cartao = context.user_data.get("index_cartao_editando")
+
+    await query.answer("Seleção de etiquetas finalizada")
     await mostrar_opcoes_edicao(query, context, index_cartao)
 
 
@@ -1548,6 +1690,14 @@ async def criar_cartoes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                                 params={"value": membro_id})
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar membro {membro_id}: {e}")
+
+                # Adiciona etiquetas
+                for etiqueta_id in rascunho.get("etiquetas_ids", []):
+                    try:
+                        trello_request_for_user(user_id, "POST", f"/cards/{card['id']}/idLabels",
+                                                params={"value": etiqueta_id})
+                    except Exception as e:
+                        logger.warning(f"Erro ao adicionar etiqueta {etiqueta_id}: {e}")
 
                 # Adiciona anexos
                 for anexo_path in rascunho.get("anexos", []):
@@ -1675,6 +1825,14 @@ async def criar_cartoes_cmd_from_callback(query, context):
                                                 params={"value": membro_id})
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar membro {membro_id}: {e}")
+
+                # Adiciona etiquetas
+                for etiqueta_id in rascunho.get("etiquetas_ids", []):
+                    try:
+                        trello_request_for_user(user_id, "POST", f"/cards/{card['id']}/idLabels",
+                                                params={"value": etiqueta_id})
+                    except Exception as e:
+                        logger.warning(f"Erro ao adicionar etiqueta {etiqueta_id}: {e}")
 
                 # Adiciona anexos
                 for anexo_path in rascunho.get("anexos", []):
@@ -1829,6 +1987,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         index_cartao = int(data.split("|")[1])
         await add_membro_cartao(update, context, index_cartao)
 
+    elif data.startswith("add_etiqueta|"):
+        index_cartao = int(data.split("|")[1])
+        await add_etiqueta_cartao(update, context, index_cartao)
+
     elif data.startswith("add_anexo|"):
         index_cartao = int(data.split("|")[1])
         await add_anexo_cartao(update, context, index_cartao)
@@ -1839,6 +2001,13 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif data == "finalizar_selecao_membros":
         await finalizar_selecao_membros(update, context)
+
+    # Novos handlers para seleção de etiquetas
+    elif data.startswith("selecionar_etiqueta|"):
+        await selecionar_etiqueta_handler(update, context)
+
+    elif data == "finalizar_selecao_etiquetas":
+        await finalizar_selecao_etiquetas(update, context)
 
     # Handlers para busca de cartões
     elif data.startswith("editar_cartao_busca|"):
@@ -1949,9 +2118,6 @@ def main():
 if __name__ == "__main__":
 
     main()
-
-
-
 
 
 
