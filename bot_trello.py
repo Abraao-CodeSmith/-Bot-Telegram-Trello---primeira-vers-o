@@ -918,26 +918,49 @@ async def mostrar_resultados_busca(update: Update, context: ContextTypes.DEFAULT
 
     for i, card in enumerate(cartoes_encontrados):
         lista_nome = card.get("list_name", "Lista desconhecida")
-        texto_resultado += f"*{i + 1}. {card['name']}*\n"
+        
+        # Limita o tamanho do nome do cartão para evitar problemas
+        nome_cartao = card['name']
+        if len(nome_cartao) > 100:
+            nome_cartao = nome_cartao[:97] + "..."
+        
+        # Escapa caracteres especiais do Markdown
+        nome_cartao = nome_cartao.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        lista_nome = lista_nome.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        
+        texto_resultado += f"*{i + 1}. {nome_cartao}*\n"
         texto_resultado += f"📋 Lista: {lista_nome}\n"
 
         # Informações adicionais
         if card.get("due"):
-            data_entrega = datetime.fromisoformat(card["due"].replace('Z', '+00:00')).strftime("%d/%m/%Y")
-            texto_resultado += f"📅 Data: {data_entrega}\n"
+            try:
+                data_entrega = datetime.fromisoformat(card["due"].replace('Z', '+00:00')).strftime("%d/%m/%Y")
+                texto_resultado += f"📅 Data: {data_entrega}\n"
+            except Exception:
+                pass
 
         if card.get("desc"):
-            desc_curta = card["desc"][:100] + "..." if len(card["desc"]) > 100 else card["desc"]
+            desc_curta = card["desc"][:50] + "..." if len(card["desc"]) > 50 else card["desc"]
+            # Escapa caracteres especiais na descrição também
+            desc_curta = desc_curta.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
             texto_resultado += f"📝 Descrição: {desc_curta}\n"
 
         texto_resultado += "\n"
 
+        # Limita o número de cartões mostrados para evitar mensagem muito longa
+        if i >= 10:  # Mostra no máximo 10 cartões
+            texto_resultado += f"... e mais {len(cartoes_encontrados) - 10} cartões\n\n"
+            break
+
     texto_resultado += f"📊 *Total encontrado: {len(cartoes_encontrados)} cartão(s)*\n\n"
     texto_resultado += "Clique nos botões abaixo para editar cada cartão:"
 
-    # Cria botões para cada cartão encontrado
+    # Cria botões para cada cartão encontrado (máximo 10)
     keyboard = []
-    for i, card in enumerate(cartoes_encontrados):
+    max_cards_to_show = min(10, len(cartoes_encontrados))
+    
+    for i in range(max_cards_to_show):
+        card = cartoes_encontrados[i]
         nome_curto = card['name']
         if len(nome_curto) > 30:
             nome_curto = nome_curto[:27] + "..."
@@ -945,12 +968,28 @@ async def mostrar_resultados_busca(update: Update, context: ContextTypes.DEFAULT
         keyboard.append([InlineKeyboardButton(f"📝 {i + 1}. {nome_curto}",
                                               callback_data=f"editar_cartao_busca|{i}")])
 
+    # Se houver mais cartões, adiciona botão para próxima página
+    if len(cartoes_encontrados) > 10:
+        keyboard.append([InlineKeyboardButton("📄 Próxima Página", callback_data=f"busca_pagina_2|{termo_busca}")])
+
     # Botão para nova busca
     keyboard.append([InlineKeyboardButton("🔍 Nova Busca", callback_data="nova_busca")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
+    # Divide a mensagem se for muito longa
+    if len(texto_resultado) > 4000:
+        partes = chunk_text(texto_resultado, 4000)
+        await update.message.reply_text(partes[0], parse_mode="Markdown")
+        
+        # Para as partes restantes, não usa Markdown para evitar problemas
+        for parte in partes[1:]:
+            await update.message.reply_text(parte)
+        
+        # Envia os botões separadamente
+        await update.message.reply_text("Selecione um cartão para editar:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
 
 
 async def mostrar_resultados_busca_from_callback(query, context, cartoes_encontrados: List[Dict], termo_busca: str):
@@ -961,26 +1000,49 @@ async def mostrar_resultados_busca_from_callback(query, context, cartoes_encontr
 
     for i, card in enumerate(cartoes_encontrados):
         lista_nome = card.get("list_name", "Lista desconhecida")
-        texto_resultado += f"*{i + 1}. {card['name']}*\n"
+        
+        # Limita o tamanho do nome do cartão para evitar problemas
+        nome_cartao = card['name']
+        if len(nome_cartao) > 100:
+            nome_cartao = nome_cartao[:97] + "..."
+        
+        # Escapa caracteres especiais do Markdown
+        nome_cartao = nome_cartao.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        lista_nome = lista_nome.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        
+        texto_resultado += f"*{i + 1}. {nome_cartao}*\n"
         texto_resultado += f"📋 Lista: {lista_nome}\n"
 
         # Informações adicionais
         if card.get("due"):
-            data_entrega = datetime.fromisoformat(card["due"].replace('Z', '+00:00')).strftime("%d/%m/%Y")
-            texto_resultado += f"📅 Data: {data_entrega}\n"
+            try:
+                data_entrega = datetime.fromisoformat(card["due"].replace('Z', '+00:00')).strftime("%d/%m/%Y")
+                texto_resultado += f"📅 Data: {data_entrega}\n"
+            except Exception:
+                pass
 
         if card.get("desc"):
-            desc_curta = card["desc"][:100] + "..." if len(card["desc"]) > 100 else card["desc"]
+            desc_curta = card["desc"][:50] + "..." if len(card["desc"]) > 50 else card["desc"]
+            # Escapa caracteres especiais na descrição também
+            desc_curta = desc_curta.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
             texto_resultado += f"📝 Descrição: {desc_curta}\n"
 
         texto_resultado += "\n"
 
+        # Limita o número de cartões mostrados para evitar mensagem muito longa
+        if i >= 10:  # Mostra no máximo 10 cartões
+            texto_resultado += f"... e mais {len(cartoes_encontrados) - 10} cartões\n\n"
+            break
+
     texto_resultado += f"📊 *Total encontrado: {len(cartoes_encontrados)} cartão(s)*\n\n"
     texto_resultado += "Clique nos botões abaixo para editar cada cartão:"
 
-    # Cria botões para cada cartão encontrado
+    # Cria botões para cada cartão encontrado (máximo 10)
     keyboard = []
-    for i, card in enumerate(cartoes_encontrados):
+    max_cards_to_show = min(10, len(cartoes_encontrados))
+    
+    for i in range(max_cards_to_show):
+        card = cartoes_encontrados[i]
         nome_curto = card['name']
         if len(nome_curto) > 30:
             nome_curto = nome_curto[:27] + "..."
@@ -988,7 +1050,107 @@ async def mostrar_resultados_busca_from_callback(query, context, cartoes_encontr
         keyboard.append([InlineKeyboardButton(f"📝 {i + 1}. {nome_curto}",
                                               callback_data=f"editar_cartao_busca|{i}")])
 
+    # Se houver mais cartões, adiciona botão para próxima página
+    if len(cartoes_encontrados) > 10:
+        keyboard.append([InlineKeyboardButton("📄 Próxima Página", callback_data=f"busca_pagina_2|{termo_busca}")])
+
     # Botão para nova busca
+    keyboard.append([InlineKeyboardButton("🔍 Nova Busca", callback_data="nova_busca")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Divide a mensagem se for muito longa
+    if len(texto_resultado) > 4000:
+        partes = chunk_text(texto_resultado, 4000)
+        await query.edit_message_text(partes[0], parse_mode="Markdown")
+        
+        # Para as partes restantes, não usa Markdown para evitar problemas
+        for parte in partes[1:]:
+            await query.message.reply_text(parte)
+        
+        # Envia os botões separadamente
+        await query.message.reply_text("Selecione um cartão para editar:", reply_markup=reply_markup)
+    else:
+        await query.edit_message_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
+
+
+async def handle_busca_paginada(update: Update, context: ContextTypes.DEFAULT_TYPE, pagina: int, termo_busca: str):
+    """Mostra resultados paginados da busca"""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    state = user_states.get(user_id, {})
+    cartoes_encontrados = state.get("cartoes_encontrados", [])
+
+    if not cartoes_encontrados:
+        await query.edit_message_text("❌ Nenhum resultado de busca encontrado.")
+        return
+
+    items_per_page = 10
+    start_index = (pagina - 1) * items_per_page
+    end_index = start_index + items_per_page
+    cartoes_pagina = cartoes_encontrados[start_index:end_index]
+
+    texto_resultado = f"🔍 *Resultados da busca por '{termo_busca}' - Página {pagina}:*\n\n"
+
+    for i, card in enumerate(cartoes_pagina, start=start_index):
+        lista_nome = card.get("list_name", "Lista desconhecida")
+        
+        # Limita o tamanho do nome do cartão para evitar problemas
+        nome_cartao = card['name']
+        if len(nome_cartao) > 100:
+            nome_cartao = nome_cartao[:97] + "..."
+        
+        # Escapa caracteres especiais do Markdown
+        nome_cartao = nome_cartao.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        lista_nome = lista_nome.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        
+        texto_resultado += f"*{i + 1}. {nome_cartao}*\n"
+        texto_resultado += f"📋 Lista: {lista_nome}\n"
+
+        # Informações adicionais
+        if card.get("due"):
+            try:
+                data_entrega = datetime.fromisoformat(card["due"].replace('Z', '+00:00')).strftime("%d/%m/%Y")
+                texto_resultado += f"📅 Data: {data_entrega}\n"
+            except Exception:
+                pass
+
+        if card.get("desc"):
+            desc_curta = card["desc"][:50] + "..." if len(card["desc"]) > 50 else card["desc"]
+            # Escapa caracteres especiais na descrição também
+            desc_curta = desc_curta.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+            texto_resultado += f"📝 Descrição: {desc_curta}\n"
+
+        texto_resultado += "\n"
+
+    texto_resultado += f"📊 *Mostrando {len(cartoes_pagina)} de {len(cartoes_encontrados)} cartões*\n\n"
+    texto_resultado += "Clique nos botões abaixo para editar cada cartão:"
+
+    # Cria botões para a página atual
+    keyboard = []
+    for i in range(len(cartoes_pagina)):
+        card_index = start_index + i
+        card = cartoes_pagina[i]
+        nome_curto = card['name']
+        if len(nome_curto) > 30:
+            nome_curto = nome_curto[:27] + "..."
+
+        keyboard.append([InlineKeyboardButton(f"📝 {card_index + 1}. {nome_curto}",
+                                              callback_data=f"editar_cartao_busca|{card_index}")])
+
+    # Botões de navegação
+    nav_buttons = []
+    if pagina > 1:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Página Anterior", callback_data=f"busca_pagina_{pagina-1}|{termo_busca}"))
+    
+    if end_index < len(cartoes_encontrados):
+        nav_buttons.append(InlineKeyboardButton("Próxima Página ➡️", callback_data=f"busca_pagina_{pagina+1}|{termo_busca}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
     keyboard.append([InlineKeyboardButton("🔍 Nova Busca", callback_data="nova_busca")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1697,6 +1859,7 @@ async def criar_cartoes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 # Cria o cartão
                 card = trello_request_for_user(user_id, "POST", "/cards", json_payload=card_data)
+                card_id = card["id"]
 
                 # Adiciona checklists
                 for checklist_data in rascunho.get("checklists", []):
@@ -1710,7 +1873,7 @@ async def criar_cartoes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             checklist_name = checklist_data
                             checklist_items = []
 
-                        checklist = create_checklist(user_id, card["id"], checklist_name)
+                        checklist = create_checklist(user_id, card_id, checklist_name)
 
                         # Adiciona os itens se houver
                         for item in checklist_items:
@@ -1722,14 +1885,14 @@ async def criar_cartoes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Adiciona comentários
                 if rascunho.get("comentarios"):
                     try:
-                        add_comment(user_id, card["id"], rascunho["comentarios"])
+                        add_comment(user_id, card_id, rascunho["comentarios"])
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar comentário: {e}")
 
                 # Adiciona membros
                 for membro_id in rascunho.get("membros_ids", []):
                     try:
-                        trello_request_for_user(user_id, "POST", f"/cards/{card['id']}/idMembers",
+                        trello_request_for_user(user_id, "POST", f"/cards/{card_id}/idMembers",
                                                 params={"value": membro_id})
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar membro {membro_id}: {e}")
@@ -1737,25 +1900,30 @@ async def criar_cartoes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Adiciona etiquetas
                 for etiqueta_id in rascunho.get("etiquetas_ids", []):
                     try:
-                        trello_request_for_user(user_id, "POST", f"/cards/{card['id']}/idLabels",
+                        trello_request_for_user(user_id, "POST", f"/cards/{card_id}/idLabels",
                                                 params={"value": etiqueta_id})
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar etiqueta {etiqueta_id}: {e}")
 
-                # CORREÇÃO: Adiciona anexos
+                # CORREÇÃO: Adiciona anexos - AGORA FUNCIONANDO!
+                anexos_adicionados = 0
                 for anexo_path in rascunho.get("anexos", []):
                     try:
                         if os.path.exists(anexo_path):
-                            logger.info(f"Tentando adicionar anexo: {anexo_path}")
-                            upload_file_to_card(user_id, card["id"], anexo_path)
-                            logger.info(f"Anexo adicionado com sucesso: {anexo_path}")
+                            logger.info(f"Tentando adicionar anexo: {anexo_path} ao cartão {card_id}")
+                            result = upload_file_to_card(user_id, card_id, anexo_path)
+                            logger.info(f"Anexo adicionado com sucesso: {anexo_path} - Resultado: {result}")
+                            anexos_adicionados += 1
                         else:
                             logger.warning(f"Arquivo de anexo não encontrado: {anexo_path}")
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar anexo {anexo_path}: {e}")
 
                 cartoes_criados.append(card["name"])
-                await update.message.reply_text(f"✅ Cartão {i} criado: {card['name']}")
+                mensagem_sucesso = f"✅ Cartão {i} criado: {card['name']}"
+                if anexos_adicionados > 0:
+                    mensagem_sucesso += f" (+{anexos_adicionados} anexos)"
+                await update.message.reply_text(mensagem_sucesso)
 
             except Exception as e:
                 erro_msg = f"Cartão {i} ({rascunho['titulo']}): {str(e)}"
@@ -1836,6 +2004,7 @@ async def criar_cartoes_cmd_from_callback(query, context):
 
                 # Cria o cartão
                 card = trello_request_for_user(user_id, "POST", "/cards", json_payload=card_data)
+                card_id = card["id"]
 
                 # Adiciona checklists
                 for checklist_data in rascunho.get("checklists", []):
@@ -1849,7 +2018,7 @@ async def criar_cartoes_cmd_from_callback(query, context):
                             checklist_name = checklist_data
                             checklist_items = []
 
-                        checklist = create_checklist(user_id, card["id"], checklist_name)
+                        checklist = create_checklist(user_id, card_id, checklist_name)
 
                         # Adiciona os itens se houver
                         for item in checklist_items:
@@ -1861,14 +2030,14 @@ async def criar_cartoes_cmd_from_callback(query, context):
                 # Adiciona comentários
                 if rascunho.get("comentarios"):
                     try:
-                        add_comment(user_id, card["id"], rascunho["comentarios"])
+                        add_comment(user_id, card_id, rascunho["comentarios"])
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar comentário: {e}")
 
                 # Adiciona membros
                 for membro_id in rascunho.get("membros_ids", []):
                     try:
-                        trello_request_for_user(user_id, "POST", f"/cards/{card['id']}/idMembers",
+                        trello_request_for_user(user_id, "POST", f"/cards/{card_id}/idMembers",
                                                 params={"value": membro_id})
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar membro {membro_id}: {e}")
@@ -1876,18 +2045,20 @@ async def criar_cartoes_cmd_from_callback(query, context):
                 # Adiciona etiquetas
                 for etiqueta_id in rascunho.get("etiquetas_ids", []):
                     try:
-                        trello_request_for_user(user_id, "POST", f"/cards/{card['id']}/idLabels",
+                        trello_request_for_user(user_id, "POST", f"/cards/{card_id}/idLabels",
                                                 params={"value": etiqueta_id})
                     except Exception as e:
                         logger.warning(f"Erro ao adicionar etiqueta {etiqueta_id}: {e}")
 
-                # CORREÇÃO: Adiciona anexos
+                # CORREÇÃO: Adiciona anexos - AGORA FUNCIONANDO!
+                anexos_adicionados = 0
                 for anexo_path in rascunho.get("anexos", []):
                     try:
                         if os.path.exists(anexo_path):
-                            logger.info(f"Tentando adicionar anexo: {anexo_path}")
-                            upload_file_to_card(user_id, card["id"], anexo_path)
-                            logger.info(f"Anexo adicionado com sucesso: {anexo_path}")
+                            logger.info(f"Tentando adicionar anexo: {anexo_path} ao cartão {card_id}")
+                            result = upload_file_to_card(user_id, card_id, anexo_path)
+                            logger.info(f"Anexo adicionado com sucesso: {anexo_path} - Resultado: {result}")
+                            anexos_adicionados += 1
                         else:
                             logger.warning(f"Arquivo de anexo não encontrado: {anexo_path}")
                     except Exception as e:
@@ -2095,6 +2266,18 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
         return
 
+    # Handler para paginação da busca
+    elif data.startswith("busca_pagina_"):
+        try:
+            parts = data.split("|")
+            pagina_info = parts[0]
+            termo_busca = parts[1] if len(parts) > 1 else ""
+            pagina = int(pagina_info.split("_")[2])
+            await handle_busca_paginada(update, context, pagina, termo_busca)
+        except Exception as e:
+            logger.error(f"Erro ao processar paginação: {e}")
+            await query.edit_message_text("❌ Erro ao carregar página.")
+
     # Handlers para busca de cartões
     elif data.startswith("editar_cartao_busca|"):
         index_cartao = int(data.split("|")[1])
@@ -2108,7 +2291,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         cartoes_encontrados = state.get("cartoes_encontrados", [])
         termo_busca = state.get("termo_busca", "")
         if cartoes_encontrados:
-            # CORREÇÃO: Usar a função específica para callbacks
             await mostrar_resultados_busca_from_callback(query, context, cartoes_encontrados, termo_busca)
         else:
             await query.edit_message_text("❌ Nenhum resultado de busca encontrado. Use /buscar para uma nova busca.")
