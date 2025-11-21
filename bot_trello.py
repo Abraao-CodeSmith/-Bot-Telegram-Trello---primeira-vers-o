@@ -53,6 +53,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+from telegram.error import BadRequest
 
 # -------------------- CONFIG --------------------
 
@@ -1071,7 +1072,13 @@ async def mostrar_resultados_busca_from_callback(query, context, cartoes_encontr
         # Envia os botões separadamente
         await query.message.reply_text("Selecione um cartão para editar:", reply_markup=reply_markup)
     else:
-        await query.edit_message_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
+        try:
+            await query.edit_message_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
+        except BadRequest as e:
+            if "Message is not modified" in str(e):
+                await query.answer("✅ Resultados atualizados")
+            else:
+                raise e
 
 
 async def handle_busca_paginada(update: Update, context: ContextTypes.DEFAULT_TYPE, pagina: int, termo_busca: str):
@@ -1155,7 +1162,13 @@ async def handle_busca_paginada(update: Update, context: ContextTypes.DEFAULT_TY
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
+    try:
+        await query.edit_message_text(texto_resultado, parse_mode="Markdown", reply_markup=reply_markup)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            await query.answer("✅ Página atualizada")
+        else:
+            raise e
 
 
 async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: int):
@@ -1413,7 +1426,13 @@ async def ok_cmd_from_callback(query, context):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(preview_text, parse_mode="Markdown", reply_markup=reply_markup)
+    try:
+        await query.edit_message_text(preview_text, parse_mode="Markdown", reply_markup=reply_markup)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            await query.answer("✅ Prévia atualizada")
+        else:
+            raise e
 
 
 async def mostrar_opcoes_edicao(query, context, index_cartao: int):
@@ -1570,7 +1589,10 @@ async def add_membro_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         users = load_users()
         ud = users.get(str(user_id))
         if not ud:
-            await update.message.reply_text("Configuração não encontrada.")
+            if update.callback_query:
+                await update.callback_query.message.reply_text("Configuração não encontrada.")
+            else:
+                await update.message.reply_text("Configuração não encontrada.")
             return
 
         board_id = ud["board_id"]
@@ -1610,7 +1632,14 @@ async def add_membro_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         mensagem = "👥 *Selecionar Membros*\n\nClique nos membros para adicionar/remover (seleção múltipla):"
 
         if update.callback_query:
-            await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+            try:
+                await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+            except BadRequest as e:
+                if "Message is not modified" in str(e):
+                    # Ignora o erro se a mensagem não foi modificada
+                    await update.callback_query.answer("✅ Seleção atualizada")
+                else:
+                    raise e
         else:
             await update.message.reply_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
 
@@ -1631,7 +1660,10 @@ async def add_etiqueta_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE
         users = load_users()
         ud = users.get(str(user_id))
         if not ud:
-            await update.message.reply_text("Configuração não encontrada.")
+            if update.callback_query:
+                await update.callback_query.message.reply_text("Configuração não encontrada.")
+            else:
+                await update.message.reply_text("Configuração não encontrada.")
             return
 
         board_id = ud["board_id"]
@@ -1678,7 +1710,14 @@ async def add_etiqueta_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE
         mensagem = "🏷️ *Selecionar Etiquetas*\n\nClique nas etiquetas para adicionar/remover (seleção múltipla):"
 
         if update.callback_query:
-            await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+            try:
+                await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+            except BadRequest as e:
+                if "Message is not modified" in str(e):
+                    # Ignora o erro se a mensagem não foi modificada
+                    await update.callback_query.answer("✅ Seleção atualizada")
+                else:
+                    raise e
         else:
             await update.message.reply_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
 
