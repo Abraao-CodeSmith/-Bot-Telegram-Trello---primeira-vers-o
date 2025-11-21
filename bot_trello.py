@@ -884,11 +884,18 @@ async def buscar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Busca cartões no quadro
         board_id = users[str(user_id)]["board_id"]
         cards = get_board_cards(user_id, board_id)
+        
+        # Busca as listas do quadro para mapear os IDs
+        lists = get_board_lists(user_id, board_id)
+        list_map = {lst["id"]: lst["name"] for lst in lists}
 
         # Filtra cartões pelo termo de busca (case insensitive)
         cartoes_encontrados = []
         for card in cards:
             if termo_busca.lower() in card.get("name", "").lower():
+                # Adiciona o nome da lista ao card
+                list_id = card.get("idList")
+                card["list_name"] = list_map.get(list_id, "Lista desconhecida")
                 cartoes_encontrados.append(card)
 
         if not cartoes_encontrados:
@@ -899,7 +906,7 @@ async def buscar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_states[user_id] = {
             "mode": "busca_cartoes",
             "cartoes_encontrados": cartoes_encontrados,
-            "termo_busca": termo_busca  # SALVA O TERMO DE BUSCA
+            "termo_busca": termo_busca
         }
 
         # Mostra resultados com interface de edição
@@ -1195,23 +1202,26 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
         detalhes_text = f"*EDITANDO CARTÃO:*\n\n"
         detalhes_text += f"*{card_detalhes['name']}*\n\n"
 
+        # Lista atual
+        lista_nome = card.get("list_name", "Lista desconhecida")
+        detalhes_text += f"📋 *Lista:* {lista_nome}\n\n"
+
         # Descrição
         if card_detalhes.get('desc'):
-            detalhes_text += f"{card_detalhes['desc']}\n\n"
+            detalhes_text += f"*Descrição:*\n{card_detalhes['desc']}\n\n"
 
         # Data
         if card_detalhes.get('due'):
             data_entrega = datetime.fromisoformat(card_detalhes['due'].replace('Z', '+00:00')).strftime("%d/%m/%Y")
-            detalhes_text += f"📅 Data entrega: {data_entrega}\n\n"
+            detalhes_text += f"📅 *Data entrega:* {data_entrega}\n\n"
 
         # Checklists
         if checklists:
             detalhes_text += f"📋 *Checklists:*\n"
             for checklist in checklists:
-                detalhes_text += f"• {checklist['name']} ({len(checklist.get('checkItems', []))} itens)\n"
-                for item in checklist.get('checkItems', []):
-                    status = "✅" if item.get('state') == 'complete' else "☐"
-                    detalhes_text += f"  {status} {item['name']}\n"
+                itens_concluidos = sum(1 for item in checklist.get('checkItems', []) if item.get('state') == 'complete')
+                total_itens = len(checklist.get('checkItems', []))
+                detalhes_text += f"• {checklist['name']} ({itens_concluidos}/{total_itens} itens)\n"
             detalhes_text += "\n"
 
         # Comentários
@@ -1232,20 +1242,39 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
                 if len(nome_anexo) > 30:
                     nome_anexo = nome_anexo[:27] + "..."
                 detalhes_text += f"• {nome_anexo}\n"
+            detalhes_text += "\n"
 
-        # Botões de edição
+        # Botões de edição - ORGANIZADOS EM 2 COLUNAS
         keyboard = [
-            [InlineKeyboardButton("📝 Editar Nome", callback_data=f"editar_nome_existente|{index_cartao}")],
-            [InlineKeyboardButton("📄 Editar Descrição", callback_data=f"editar_desc_existente|{index_cartao}")],
-            [InlineKeyboardButton("📅 Editar Data", callback_data=f"editar_data_existente|{index_cartao}")],
-            [InlineKeyboardButton("📋 Gerenciar Checklists", callback_data=f"gerenciar_checklists|{index_cartao}")],
-            [InlineKeyboardButton("💬 Adicionar Comentário", callback_data=f"add_comentario_existente|{index_cartao}")],
-            [InlineKeyboardButton("📎 Adicionar Anexo", callback_data=f"add_anexo_existente|{index_cartao}")],
-            [InlineKeyboardButton("🏷️ Gerenciar Etiquetas", callback_data=f"gerenciar_etiquetas_existente|{index_cartao}")],
-            [InlineKeyboardButton("👥 Gerenciar Membros", callback_data=f"gerenciar_membros_existente|{index_cartao}")],
+            # Primeira linha: Edições básicas
+            [
+                InlineKeyboardButton("📝 Nome", callback_data=f"editar_nome_existente|{index_cartao}"),
+                InlineKeyboardButton("📄 Descrição", callback_data=f"editar_desc_existente|{index_cartao}")
+            ],
+            # Segunda linha: Data e Checklists
+            [
+                InlineKeyboardButton("📅 Data", callback_data=f"editar_data_existente|{index_cartao}"),
+                InlineKeyboardButton("📋 Checklists", callback_data=f"gerenciar_checklists|{index_cartao}")
+            ],
+            # Terceira linha: Comentários e Anexos
+            [
+                InlineKeyboardButton("💬 Comentário", callback_data=f"add_comentario_existente|{index_cartao}"),
+                InlineKeyboardButton("📎 Add Anexo", callback_data=f"add_anexo_existente|{index_cartao}")
+            ],
+            # Quarta linha: Ver Anexos e Etiquetas
+            [
+                InlineKeyboardButton("👁️ Ver Anexos", callback_data=f"ver_anexos_existente|{index_cartao}"),
+                InlineKeyboardButton("🏷️ Etiquetas", callback_data=f"gerenciar_etiquetas_existente|{index_cartao}")
+            ],
+            # Quinta linha: Membros e Mover
+            [
+                InlineKeyboardButton("👥 Membros", callback_data=f"gerenciar_membros_existente|{index_cartao}"),
+                InlineKeyboardButton("🚀 Mover", callback_data=f"mover_cartao_existente|{index_cartao}")
+            ],
+            # Última linha: Navegação
             [
                 InlineKeyboardButton("⬅️ Voltar", callback_data="voltar_busca"),
-                InlineKeyboardButton("🚀 Mover Cartão", callback_data=f"mover_cartao|{index_cartao}")
+                InlineKeyboardButton("🔄 Atualizar", callback_data=f"editar_cartao_busca|{index_cartao}")
             ]
         ]
 
@@ -1256,6 +1285,175 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
     except Exception as e:
         logger.exception(f"Erro ao carregar detalhes do cartão: {e}")
         await query.edit_message_text(f"❌ Erro ao carregar detalhes do cartão: {str(e)}")
+
+
+async def ver_anexos_existente(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
+    """Mostra anexos do cartão com links clicáveis"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    state = user_states.get(user_id, {})
+    cartoes_encontrados = state.get("cartoes_encontrados", [])
+
+    if not cartoes_encontrados or index_cartao >= len(cartoes_encontrados):
+        await query.edit_message_text("❌ Cartão não encontrado.")
+        return
+
+    card = cartoes_encontrados[index_cartao]
+    card_id = card["id"]
+
+    try:
+        # Busca anexos do cartão
+        anexos = get_card_attachments(user_id, card_id)
+        
+        if not anexos:
+            mensagem = f"📎 *Anexos do cartão:*\n\n*{card['name']}*\n\nNenhum anexo encontrado."
+            keyboard = [
+                [InlineKeyboardButton("⬅️ Voltar", callback_data=f"editar_cartao_busca|{index_cartao}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+            return
+
+        # Constrói mensagem com links clicáveis
+        mensagem = f"📎 *Anexos do cartão:*\n\n*{card['name']}*\n\n"
+        
+        for i, anexo in enumerate(anexos, 1):
+            nome_anexo = anexo.get('name', f'Anexo {i}')
+            url_anexo = anexo.get('url')
+            tamanho = anexo.get('bytes', 0)
+            
+            # Formata o tamanho do arquivo
+            if tamanho > 0:
+                if tamanho < 1024:
+                    tamanho_str = f"{tamanho} B"
+                elif tamanho < 1024 * 1024:
+                    tamanho_str = f"{tamanho/1024:.1f} KB"
+                else:
+                    tamanho_str = f"{tamanho/(1024*1024):.1f} MB"
+            else:
+                tamanho_str = "Tamanho desconhecido"
+            
+            mensagem += f"{i}. [{nome_anexo}]({url_anexo}) - {tamanho_str}\n"
+
+        mensagem += f"\n📊 Total: {len(anexos)} anexo(s)"
+
+        # Botões de ação
+        keyboard = [
+            [InlineKeyboardButton("📎 Adicionar Anexo", callback_data=f"add_anexo_existente|{index_cartao}")],
+            [InlineKeyboardButton("🔄 Atualizar", callback_data=f"ver_anexos_existente|{index_cartao}")],
+            [InlineKeyboardButton("⬅️ Voltar", callback_data=f"editar_cartao_busca|{index_cartao}")]
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup, disable_web_page_preview=True)
+
+    except Exception as e:
+        logger.exception(f"Erro ao carregar anexos: {e}")
+        await query.edit_message_text(f"❌ Erro ao carregar anexos: {str(e)}")
+
+
+async def mover_cartao_existente(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
+    """Mostra opções para mover cartão para outra lista"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    state = user_states.get(user_id, {})
+    cartoes_encontrados = state.get("cartoes_encontrados", [])
+
+    if not cartoes_encontrados or index_cartao >= len(cartoes_encontrados):
+        await query.edit_message_text("❌ Cartão não encontrado.")
+        return
+
+    card = cartoes_encontrados[index_cartao]
+    
+    try:
+        users = load_users()
+        board_id = users[str(user_id)]["board_id"]
+        
+        # Busca listas disponíveis no quadro
+        lists = get_board_lists(user_id, board_id)
+        
+        if not lists:
+            await query.edit_message_text("❌ Nenhuma lista encontrada no quadro.")
+            return
+
+        # Lista atual do cartão
+        lista_atual_id = card.get("idList")
+        lista_atual_nome = "Lista desconhecida"
+        
+        # Cria teclado com listas disponíveis
+        keyboard = []
+        for lst in lists:
+            lista_nome = lst.get("name", "Sem nome")
+            # Marca a lista atual
+            if lst["id"] == lista_atual_id:
+                lista_atual_nome = lista_nome
+                lista_nome = f"📍 {lista_nome} (atual)"
+            
+            keyboard.append([InlineKeyboardButton(lista_nome, callback_data=f"mover_para_lista|{index_cartao}|{lst['id']}")])
+
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data=f"editar_cartao_busca|{index_cartao}")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        mensagem = f"🚀 *Mover Cartão*\n\n*{card['name']}*\n\n📋 *Lista atual:* {lista_atual_nome}\n\nSelecione a lista de destino:"
+
+        await query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+
+    except Exception as e:
+        logger.exception(f"Erro ao carregar listas: {e}")
+        await query.edit_message_text(f"❌ Erro ao carregar listas: {str(e)}")
+
+
+async def mover_para_lista_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int, lista_id: str):
+    """Move o cartão para a lista selecionada"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    state = user_states.get(user_id, {})
+    cartoes_encontrados = state.get("cartoes_encontrados", [])
+
+    if not cartoes_encontrados or index_cartao >= len(cartoes_encontrados):
+        await query.edit_message_text("❌ Cartão não encontrado.")
+        return
+
+    card = cartoes_encontrados[index_cartao]
+    card_id = card["id"]
+
+    try:
+        # Move o cartão
+        result = trello_request_for_user(user_id, "PUT", f"/cards/{card_id}", params={"idList": lista_id})
+        
+        # Busca o nome da lista de destino
+        users = load_users()
+        board_id = users[str(user_id)]["board_id"]
+        lists = get_board_lists(user_id, board_id)
+        lista_destino_nome = "Lista desconhecida"
+        
+        for lst in lists:
+            if lst["id"] == lista_id:
+                lista_destino_nome = lst.get("name", "Lista desconhecida")
+                break
+
+        mensagem = f"✅ *Cartão movido com sucesso!*\n\n*{card['name']}*\n\n📋 Movido para: {lista_destino_nome}"
+
+        keyboard = [
+            [InlineKeyboardButton("⬅️ Voltar", callback_data=f"editar_cartao_busca|{index_cartao}")],
+            [InlineKeyboardButton("🔄 Atualizar Busca", callback_data="voltar_busca")]
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(mensagem, parse_mode="Markdown", reply_markup=reply_markup)
+
+    except Exception as e:
+        logger.exception(f"Erro ao mover cartão: {e}")
+        await query.edit_message_text(f"❌ Erro ao mover cartão: {str(e)}")
 
 
 # -------------------- Sistema de PDFs com Prévia e Edição --------------------
@@ -2333,6 +2531,21 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await mostrar_resultados_busca_from_callback(query, context, cartoes_encontrados, termo_busca)
         else:
             await query.edit_message_text("❌ Nenhum resultado de busca encontrado. Use /buscar para uma nova busca.")
+
+    # Novos handlers para ver anexos e mover cartão
+    elif data.startswith("ver_anexos_existente|"):
+        index_cartao = int(data.split("|")[1])
+        await ver_anexos_existente(update, context, index_cartao)
+
+    elif data.startswith("mover_cartao_existente|"):
+        index_cartao = int(data.split("|")[1])
+        await mover_cartao_existente(update, context, index_cartao)
+
+    elif data.startswith("mover_para_lista|"):
+        parts = data.split("|")
+        index_cartao = int(parts[1])
+        lista_id = parts[2]
+        await mover_para_lista_handler(update, context, index_cartao, lista_id)
 
 
 # -------------------- Funções Auxiliares para Modos Guiados --------------------
