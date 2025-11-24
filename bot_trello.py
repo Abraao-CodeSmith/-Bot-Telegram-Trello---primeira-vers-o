@@ -1297,6 +1297,12 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
         checklists = get_card_checklists(user_id, card_id)
         comentarios = get_card_comments(user_id, card_id)
         anexos = get_card_attachments(user_id, card_id)
+        
+        # Busca membros do cartão
+        membros_card = trello_request_for_user(user_id, "GET", f"/cards/{card_id}/members")
+        
+        # Busca etiquetas do cartão
+        etiquetas_card = trello_request_for_user(user_id, "GET", f"/cards/{card_id}/labels")
 
         # Detalhes do cartão
         detalhes_text = f"*EDITANDO CARTÃO:*\n\n"
@@ -1314,6 +1320,17 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
         if card_detalhes.get('due'):
             data_entrega = datetime.fromisoformat(card_detalhes['due'].replace('Z', '+00:00')).strftime("%d/%m/%Y")
             detalhes_text += f"📅 *Data entrega:* {data_entrega}\n\n"
+
+        # Membros (se houver)
+        if membros_card:
+            nomes_membros = [membro.get('fullName', membro.get('username', 'Sem nome')) for membro in membros_card]
+            detalhes_text += f"👥 *Membros:* {', '.join(nomes_membros)}\n\n"
+
+        # Etiquetas (se houver)
+        if etiquetas_card:
+            nomes_etiquetas = [etiqueta.get('name', 'Sem nome') for etiqueta in etiquetas_card if etiqueta.get('name')]
+            if nomes_etiquetas:
+                detalhes_text += f"🏷️ *Etiquetas:* {', '.join(nomes_etiquetas)}\n\n"
 
         # Checklists
         if checklists:
@@ -1351,14 +1368,9 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
                 InlineKeyboardButton("📎 Add Anexo", callback_data=f"add_anexo_existente|{index_cartao}"),
                 InlineKeyboardButton("👁️ Ver Anexos", callback_data=f"ver_anexos_existente|{index_cartao}")
             ],
-            # Segunda linha: Etiquetas e Comentário
+            # Segunda linha: Comentário e Mover
             [
-                InlineKeyboardButton("🏷️ Etiquetas", callback_data=f"gerenciar_etiquetas_existente|{index_cartao}"),
-                InlineKeyboardButton("💬 Add Comentário", callback_data=f"add_comentario_existente|{index_cartao}")
-            ],
-            # Terceira linha: Membro e Mover
-            [
-                InlineKeyboardButton("👥 Membro", callback_data=f"gerenciar_membros_existente|{index_cartao}"),
+                InlineKeyboardButton("💬 Add Comentário", callback_data=f"add_comentario_existente|{index_cartao}"),
                 InlineKeyboardButton("🚀 Mover", callback_data=f"mover_cartao_existente|{index_cartao}")
             ],
             # Última linha: Navegação
@@ -1446,7 +1458,7 @@ async def ver_anexos_existente(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def add_anexo_existente(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
-    """Inicia modo de adição de anexo para um cartão existente"""
+    """Inicia modo de adição de anexo para um cartão existente - ACEITA QUALQUER TIPO DE ARQUIVO"""
     query = update.callback_query
     await query.answer()
     
@@ -1464,6 +1476,7 @@ async def add_anexo_existente(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         "📎 *Modo de adição de anexos*\n\n"
         "Agora envie os arquivos que deseja anexar ao cartão.\n"
+        "✅ *Aceita qualquer tipo de arquivo:* imagens, PDFs, documentos, etc.\n\n"
         "Após enviar todos os arquivos, use:\n"
         "• `/ok` para finalizar e adicionar os anexos\n"
         "• `/cancelar` para cancelar a operação\n\n"
@@ -1888,7 +1901,7 @@ async def add_comentario_cartao(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def add_anexo_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
-    """Inicia modo de adição de anexo para um cartão específico"""
+    """Inicia modo de adição de anexo para um cartão específico - ACEITA QUALQUER TIPO DE ARQUIVO"""
     user_id = update.effective_user.id if update.message else update.callback_query.from_user.id
 
     state = user_states.get(user_id, {})
@@ -1902,6 +1915,7 @@ async def add_anexo_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE, i
     mensagem = (
         "📎 *Modo de adição de anexos*\n\n"
         "Agora envie os arquivos que deseja anexar.\n"
+        "✅ *Aceita qualquer tipo de arquivo:* imagens, PDFs, documentos, etc.\n\n"
         "Após enviar todos os arquivos, use:\n"
         "• `/ok` para finalizar e voltar à edição\n"
         "• `/cancelar` para cancelar a operação\n\n"
@@ -2474,7 +2488,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = user_states.get(user_id, {})
 
     if state.get("mode") == "coletando_pdfs":
-        # Modo de coleta de PDFs para criação de cartões
+        # Modo de coleta de PDFs para criação de cartões - APENAS PDFs
         document = update.message.document
         if not document.mime_type or "pdf" not in document.mime_type.lower():
             await update.message.reply_text("❌ Por favor, envie apenas arquivos PDF.")
@@ -2515,7 +2529,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Erro ao processar PDF: {str(e)}")
 
     elif state.get("mode") == "adicionando_anexo_cartao":
-        # Modo de adição de anexos para cartões em criação
+        # Modo de adição de anexos para cartões em criação - QUALQUER TIPO DE ARQUIVO
         document = update.message.document
         try:
             # Baixa o arquivo
@@ -2540,7 +2554,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Erro ao processar arquivo: {str(e)}")
 
     elif state.get("mode") == "adicionando_anexo_existente":
-        # Modo de adição de anexos para cartões existentes (busca)
+        # Modo de adição de anexos para cartões existentes (busca) - QUALQUER TIPO DE ARQUIVO
         document = update.message.document
         try:
             # Baixa o arquivo
@@ -2565,7 +2579,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Erro ao processar arquivo: {str(e)}")
 
     else:
-        # Modo anexo normal
+        # Modo anexo normal - QUALQUER TIPO DE ARQUIVO
         await handle_anexo_document(update, context)
 
 
@@ -2720,15 +2734,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         index_cartao = int(data.split("|")[1])
         await add_comentario_existente(update, context, index_cartao)
 
-    # Handlers para gerenciamento de membros e etiquetas em cartões existentes
-    elif data.startswith("gerenciar_membros_existente|"):
-        index_cartao = int(data.split("|")[1])
-        await add_membro_cartao(update, context, index_cartao)
-
-    elif data.startswith("gerenciar_etiquetas_existente|"):
-        index_cartao = int(data.split("|")[1])
-        await add_etiqueta_cartao(update, context, index_cartao)
-
 
 # -------------------- Funções Auxiliares para Modos Guiados --------------------
 
@@ -2762,7 +2767,7 @@ async def fim_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_anexo_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manipula documentos enviados no modo anexo normal"""
+    """Manipula documentos enviados no modo anexo normal - QUALQUER TIPO DE ARQUIVO"""
     user_id = update.effective_user.id
     state = user_states.get(user_id, {})
     if state.get("mode") != "anexo":
