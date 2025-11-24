@@ -830,6 +830,106 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         return
 
+    # Verifica se está no modo de adição de anexos para cartões existentes (busca)
+    if state.get("mode") == "adicionando_anexo_existente" and text.lower() == "/ok":
+        index_cartao = state.get("index_cartao_existente")
+        anexos_temp = state.get("anexos", [])
+        
+        if anexos_temp:
+            try:
+                # Busca o cartão
+                cartoes_encontrados = state.get("cartoes_encontrados", [])
+                if not cartoes_encontrados or index_cartao >= len(cartoes_encontrados):
+                    await update.message.reply_text("❌ Cartão não encontrado.")
+                    state["mode"] = None
+                    state["anexos"] = []
+                    user_states[user_id] = state
+                    return
+
+                card = cartoes_encontrados[index_cartao]
+                card_id = card["id"]
+
+                # Faz upload dos anexos para o Trello
+                anexos_adicionados = 0
+                for anexo_path in anexos_temp:
+                    try:
+                        if os.path.exists(anexo_path):
+                            logger.info(f"Tentando adicionar anexo: {anexo_path} ao cartão {card_id}")
+                            result = upload_file_to_card(user_id, card_id, anexo_path)
+                            logger.info(f"Anexo adicionado com sucesso: {anexo_path}")
+                            anexos_adicionados += 1
+                        else:
+                            logger.warning(f"Arquivo de anexo não encontrado: {anexo_path}")
+                    except Exception as e:
+                        logger.warning(f"Erro ao adicionar anexo {anexo_path}: {e}")
+
+                await update.message.reply_text(f"✅ {anexos_adicionados} anexo(s) adicionado(s) ao cartão!")
+                
+                # Limpa o estado
+                state["mode"] = None
+                state["anexos"] = []
+                user_states[user_id] = state
+                
+                # Volta para as opções de edição
+                fake_query = type('Obj', (object,), {
+                    'from_user': update.effective_user,
+                    'edit_message_text': update.message.reply_text,
+                    'message': update.message
+                })
+                await mostrar_opcoes_edicao_cartao_existente(fake_query, context, index_cartao)
+                
+            except Exception as e:
+                logger.exception(f"Erro ao adicionar anexos ao cartão existente: {e}")
+                await update.message.reply_text(f"❌ Erro ao adicionar anexos: {str(e)}")
+                state["mode"] = None
+                state["anexos"] = []
+                user_states[user_id] = state
+        else:
+            await update.message.reply_text("❌ Nenhum anexo foi enviado.")
+            state["mode"] = None
+            state["anexos"] = []
+            user_states[user_id] = state
+        
+        return
+
+    # Verifica se está no modo de adição de comentário para cartões existentes
+    elif state.get("mode") == "adicionando_comentario_existente":
+        index_cartao = state.get("index_cartao_existente")
+        cartoes_encontrados = state.get("cartoes_encontrados", [])
+        
+        if not cartoes_encontrados or index_cartao >= len(cartoes_encontrados):
+            await update.message.reply_text("❌ Cartão não encontrado.")
+            state["mode"] = None
+            user_states[user_id] = state
+            return
+        
+        card = cartoes_encontrados[index_cartao]
+        card_id = card["id"]
+        
+        try:
+            # Adiciona o comentário no Trello
+            add_comment(user_id, card_id, text)
+            
+            await update.message.reply_text("✅ Comentário adicionado com sucesso!")
+            
+            # Limpa o estado
+            state["mode"] = None
+            user_states[user_id] = state
+            
+            # Atualiza a interface
+            fake_query = type('Obj', (object,), {
+                'from_user': update.effective_user,
+                'edit_message_text': update.message.reply_text,
+                'message': update.message
+            })
+            await mostrar_opcoes_edicao_cartao_existente(fake_query, context, index_cartao)
+            
+        except Exception as e:
+            logger.exception(f"Erro ao adicionar comentário: {e}")
+            await update.message.reply_text(f"❌ Erro ao adicionar comentário: {str(e)}")
+            state["mode"] = None
+            user_states[user_id] = state
+
     # Verifica se está no modo direto de checklist
     if state.get("mode") == "add_checklist_direto":
         if text.startswith("/cancelar_checklist"):
@@ -1179,7 +1279,7 @@ async def handle_busca_paginada(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: int):
-    """Mostra opções de edição para um cartão existente (da busca)"""
+    """Mostra opções de edição para um cartão existente (da busca) - SIMPLIFICADA"""
     user_id = query.from_user.id
     state = user_states.get(user_id, {})
     cartoes_encontrados = state.get("cartoes_encontrados", [])
@@ -1244,31 +1344,21 @@ async def mostrar_opcoes_edicao_cartao_existente(query, context, index_cartao: i
                 detalhes_text += f"• {nome_anexo}\n"
             detalhes_text += "\n"
 
-        # Botões de edição - ORGANIZADOS EM 2 COLUNAS
+        # Botões de edição - SIMPLIFICADOS conforme solicitado
         keyboard = [
-            # Primeira linha: Edições básicas
+            # Primeira linha: Anexos e Comentários
             [
-                InlineKeyboardButton("📝 Nome", callback_data=f"editar_nome_existente|{index_cartao}"),
-                InlineKeyboardButton("📄 Descrição", callback_data=f"editar_desc_existente|{index_cartao}")
+                InlineKeyboardButton("📎 Add Anexo", callback_data=f"add_anexo_existente|{index_cartao}"),
+                InlineKeyboardButton("👁️ Ver Anexos", callback_data=f"ver_anexos_existente|{index_cartao}")
             ],
-            # Segunda linha: Data e Checklists
+            # Segunda linha: Etiquetas e Comentário
             [
-                InlineKeyboardButton("📅 Data", callback_data=f"editar_data_existente|{index_cartao}"),
-                InlineKeyboardButton("📋 Checklists", callback_data=f"gerenciar_checklists|{index_cartao}")
+                InlineKeyboardButton("🏷️ Etiquetas", callback_data=f"gerenciar_etiquetas_existente|{index_cartao}"),
+                InlineKeyboardButton("💬 Add Comentário", callback_data=f"add_comentario_existente|{index_cartao}")
             ],
-            # Terceira linha: Comentários e Anexos
+            # Terceira linha: Membro e Mover
             [
-                InlineKeyboardButton("💬 Comentário", callback_data=f"add_comentario_existente|{index_cartao}"),
-                InlineKeyboardButton("📎 Add Anexo", callback_data=f"add_anexo_existente|{index_cartao}")
-            ],
-            # Quarta linha: Ver Anexos e Etiquetas
-            [
-                InlineKeyboardButton("👁️ Ver Anexos", callback_data=f"ver_anexos_existente|{index_cartao}"),
-                InlineKeyboardButton("🏷️ Etiquetas", callback_data=f"gerenciar_etiquetas_existente|{index_cartao}")
-            ],
-            # Quinta linha: Membros e Mover
-            [
-                InlineKeyboardButton("👥 Membros", callback_data=f"gerenciar_membros_existente|{index_cartao}"),
+                InlineKeyboardButton("👥 Membro", callback_data=f"gerenciar_membros_existente|{index_cartao}"),
                 InlineKeyboardButton("🚀 Mover", callback_data=f"mover_cartao_existente|{index_cartao}")
             ],
             # Última linha: Navegação
@@ -1353,6 +1443,55 @@ async def ver_anexos_existente(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.exception(f"Erro ao carregar anexos: {e}")
         await query.edit_message_text(f"❌ Erro ao carregar anexos: {str(e)}")
+
+
+async def add_anexo_existente(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
+    """Inicia modo de adição de anexo para um cartão existente"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    state = user_states.get(user_id, {})
+    
+    # Entra no modo de adição de anexo
+    state.update({
+        "mode": "adicionando_anexo_existente",
+        "index_cartao_existente": index_cartao,
+        "anexos": []
+    })
+    user_states[user_id] = state
+    
+    await query.edit_message_text(
+        "📎 *Modo de adição de anexos*\n\n"
+        "Agora envie os arquivos que deseja anexar ao cartão.\n"
+        "Após enviar todos os arquivos, use:\n"
+        "• `/ok` para finalizar e adicionar os anexos\n"
+        "• `/cancelar` para cancelar a operação\n\n"
+        "Ou clique no botão abaixo para finalizar:",
+        parse_mode="Markdown"
+    )
+
+
+async def add_comentario_existente(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
+    """Inicia modo de adição de comentário para um cartão existente"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    state = user_states.get(user_id, {})
+    
+    # Entra no modo de adição de comentário
+    state.update({
+        "mode": "adicionando_comentario_existente",
+        "index_cartao_existente": index_cartao
+    })
+    user_states[user_id] = state
+    
+    await query.edit_message_text(
+        "💬 *Modo de adição de comentário*\n\n"
+        "Por favor, envie o comentário que deseja adicionar ao cartão:",
+        parse_mode="Markdown"
+    )
 
 
 async def mover_cartao_existente(update: Update, context: ContextTypes.DEFAULT_TYPE, index_cartao: int):
@@ -2376,7 +2515,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Erro ao processar PDF: {str(e)}")
 
     elif state.get("mode") == "adicionando_anexo_cartao":
-        # Modo de adição de anexos para cartões existentes ou em criação
+        # Modo de adição de anexos para cartões em criação
         document = update.message.document
         try:
             # Baixa o arquivo
@@ -2394,6 +2533,31 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ Arquivo '{document.file_name}' recebido. \n"
                 f"Total de anexos: {len(anexos)}\n\n"
                 f"Envie mais arquivos ou use `/ok` para finalizar."
+            )
+
+        except Exception as e:
+            logger.exception(f"Erro ao processar anexo: {e}")
+            await update.message.reply_text(f"❌ Erro ao processar arquivo: {str(e)}")
+
+    elif state.get("mode") == "adicionando_anexo_existente":
+        # Modo de adição de anexos para cartões existentes (busca)
+        document = update.message.document
+        try:
+            # Baixa o arquivo
+            file = await context.bot.get_file(document.file_id)
+            file_path = os.path.join(DOWNLOAD_DIR, f"{user_id}_{document.file_name}")
+            await file.download_to_drive(file_path)
+
+            # Adiciona ao estado temporário
+            anexos = state.get("anexos", [])
+            anexos.append(file_path)
+            state["anexos"] = anexos
+            user_states[user_id] = state
+
+            await update.message.reply_text(
+                f"✅ Arquivo '{document.file_name}' recebido. \n"
+                f"Total de anexos: {len(anexos)}\n\n"
+                f"Envie mais arquivos ou use `/ok` para finalizar e adicionar ao cartão."
             )
 
         except Exception as e:
@@ -2546,6 +2710,24 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         index_cartao = int(parts[1])
         lista_id = parts[2]
         await mover_para_lista_handler(update, context, index_cartao, lista_id)
+
+    # Novos handlers para adição de anexos e comentários em cartões existentes
+    elif data.startswith("add_anexo_existente|"):
+        index_cartao = int(data.split("|")[1])
+        await add_anexo_existente(update, context, index_cartao)
+
+    elif data.startswith("add_comentario_existente|"):
+        index_cartao = int(data.split("|")[1])
+        await add_comentario_existente(update, context, index_cartao)
+
+    # Handlers para gerenciamento de membros e etiquetas em cartões existentes
+    elif data.startswith("gerenciar_membros_existente|"):
+        index_cartao = int(data.split("|")[1])
+        await add_membro_cartao(update, context, index_cartao)
+
+    elif data.startswith("gerenciar_etiquetas_existente|"):
+        index_cartao = int(data.split("|")[1])
+        await add_etiqueta_cartao(update, context, index_cartao)
 
 
 # -------------------- Funções Auxiliares para Modos Guiados --------------------
